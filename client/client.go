@@ -28,8 +28,12 @@ func NewClient(baseURL string, timeOut time.Duration) *Client {
 		},
 	}
 }
-func (client *Client) InitGame() error {
-	initialData := &models.InitialData{Wpbot: true}
+func (client *Client) InitGame(desc, nick string, wpBot bool) (*models.InitialData, error) {
+	initialData := &models.InitialData{
+		Desc:  desc,
+		Nick:  nick,
+		Wpbot: wpBot,
+	}
 
 	body, bodyErr := json.Marshal(initialData)
 	if bodyErr != nil {
@@ -45,21 +49,21 @@ func (client *Client) InitGame() error {
 	if reqErr != nil {
 		log.Println(reqErr)
 	}
-
 	req.Header.Add("Content-Type", "application/json")
 
 	resp, respErr := client.HTTPClient.Do(req)
+
 	if respErr != nil {
 		log.Println(respErr)
 	}
 	client.Token = resp.Header.Get("X-Auth-Token")
 
-	return reqErr
+	return initialData, respErr
 }
 func (client *Client) Board() ([]string, error) {
 	board := models.Board{}
 	boardURL, urlErr := url.JoinPath(client.BaseURL, "/game/board")
-	fmt.Println(boardURL)
+
 	if urlErr != nil {
 		log.Println(urlErr)
 	}
@@ -84,7 +88,6 @@ func (client *Client) Board() ([]string, error) {
 	fmt.Println(string(cords))
 
 	jsonErr := json.Unmarshal(cords, &board)
-	fmt.Println(board.Board)
 	return board.Board, jsonErr
 
 }
@@ -103,29 +106,55 @@ func PlaceShips(cords []string, states [][]gui.State) {
 	}
 }
 
-func (client *Client) Status() (*http.Response, *models.Status, error) {
+func (client *Client) Status() (*models.Status, error) {
 	stats := models.Status{}
 	statusUrl, urlErr := url.JoinPath(client.BaseURL, "/game")
+	descUrl, descUrlErr := url.JoinPath(client.BaseURL, "/game/desc")
 	if urlErr != nil {
 		log.Println(urlErr)
+	} else if descUrlErr != nil {
+		log.Println(descUrlErr)
 	}
 	req, reqErr := http.NewRequest("GET", statusUrl, nil)
 	req.Header.Set("X-Auth-Token", client.Token)
 	if reqErr != nil {
 		log.Println(reqErr)
 	}
+	descReq, descReqErr := http.NewRequest("GET", descUrl, nil)
+	descReq.Header.Set("X-Auth-Token", client.Token)
+	if descReqErr != nil {
+		log.Println(descReqErr)
+	}
+
 	res, resErr := client.HTTPClient.Do(req)
 	if resErr != nil {
 		log.Println(resErr)
 	}
+	descRes, descResErr := client.HTTPClient.Do(descReq)
+	if descResErr != nil {
+		log.Println(descResErr)
+	}
+	defer descRes.Body.Close()
 	defer res.Body.Close()
 
 	data, dataErr := io.ReadAll(res.Body)
 	if dataErr != nil {
 		log.Println(dataErr)
 	}
-	json.Unmarshal(data, &stats)
-	return res, &stats, resErr
+	jsonErr := json.Unmarshal(data, &stats)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+	}
+	descData, descDataErr := io.ReadAll(descRes.Body)
+	if descDataErr != nil {
+		log.Println(descDataErr)
+	}
+	jsonErr = json.Unmarshal(descData, &stats)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+	}
+
+	return &stats, resErr
 }
 
 func (client *Client) Shoot(cord string, status *models.Status) (string, error) {
