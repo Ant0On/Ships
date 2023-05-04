@@ -23,6 +23,17 @@ type Status struct {
 	ShouldFire     bool     `json:"should_fire"`
 	Timer          int      `json:"timer"`
 }
+type Description struct {
+	Desc     string `json:"desc"`
+	Nick     string `json:"nick"`
+	OppDesc  string `json:"opp_desc"`
+	Opponent string `json:"opponent"`
+}
+
 type Fire struct {
 	Coord string `json:"coord"`
+}
+
+type FireResponse struct {
+	Result string `json:"result"`
 }

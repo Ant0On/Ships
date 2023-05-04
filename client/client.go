@@ -4,13 +4,15 @@ import (
 	"Ships/models"
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	gui "github.com/grupawp/warships-gui/v2"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -85,7 +87,6 @@ func (client *Client) Board() ([]string, error) {
 	if cordsErr != nil {
 		log.Println(cordsErr)
 	}
-	fmt.Println(string(cords))
 
 	jsonErr := json.Unmarshal(cords, &board)
 	return board.Board, jsonErr
@@ -105,36 +106,55 @@ func PlaceShips(cords []string, states [][]gui.State) {
 		states[x][y] = gui.Ship
 	}
 }
+func (client *Client) Descriptions() (*models.Description, error) {
+	desc := models.Description{}
+
+	descUrl, urlErr := url.JoinPath(client.BaseURL, "/game/desc")
+	if urlErr != nil {
+		log.Println(urlErr)
+	}
+	req, reqErr := http.NewRequest("GET", descUrl, nil)
+	req.Header.Set("X-Auth-Token", client.Token)
+	if reqErr != nil {
+		log.Println(reqErr)
+	}
+	time.Sleep(time.Second * 1)
+
+	res, resErr := client.HTTPClient.Do(req)
+	if resErr != nil {
+		log.Println(resErr)
+	}
+	defer res.Body.Close()
+
+	data, dataErr := io.ReadAll(res.Body)
+	if dataErr != nil {
+		log.Println(dataErr)
+	}
+	jsonErr := json.Unmarshal(data, &desc)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+	}
+	return &desc, resErr
+}
 
 func (client *Client) Status() (*models.Status, error) {
 	stats := models.Status{}
 	statusUrl, urlErr := url.JoinPath(client.BaseURL, "/game")
-	descUrl, descUrlErr := url.JoinPath(client.BaseURL, "/game/desc")
+
 	if urlErr != nil {
 		log.Println(urlErr)
-	} else if descUrlErr != nil {
-		log.Println(descUrlErr)
 	}
 	req, reqErr := http.NewRequest("GET", statusUrl, nil)
 	req.Header.Set("X-Auth-Token", client.Token)
 	if reqErr != nil {
 		log.Println(reqErr)
 	}
-	descReq, descReqErr := http.NewRequest("GET", descUrl, nil)
-	descReq.Header.Set("X-Auth-Token", client.Token)
-	if descReqErr != nil {
-		log.Println(descReqErr)
-	}
 
 	res, resErr := client.HTTPClient.Do(req)
 	if resErr != nil {
 		log.Println(resErr)
 	}
-	descRes, descResErr := client.HTTPClient.Do(descReq)
-	if descResErr != nil {
-		log.Println(descResErr)
-	}
-	defer descRes.Body.Close()
+
 	defer res.Body.Close()
 
 	data, dataErr := io.ReadAll(res.Body)
@@ -145,34 +165,23 @@ func (client *Client) Status() (*models.Status, error) {
 	if jsonErr != nil {
 		log.Println(jsonErr)
 	}
-	descData, descDataErr := io.ReadAll(descRes.Body)
-	if descDataErr != nil {
-		log.Println(descDataErr)
-	}
-	jsonErr = json.Unmarshal(descData, &stats)
-	if jsonErr != nil {
-		log.Println(jsonErr)
-	}
 
 	return &stats, resErr
 }
 
-func (client *Client) Shoot(cord string, status *models.Status) (string, error) {
+func (client *Client) Fire(cord string) (string, error) {
+	cord = strings.ToUpper(cord)
+	isValid := isValidCoordinate(cord)
+	if isValid == false {
+		return "", errors.New("wrong type of coordinates. ex. (A1)")
+	}
 	fireData := models.Fire{Coord: cord}
+	fireResp := models.FireResponse{}
 	body, bodyErr := json.Marshal(fireData)
 	if bodyErr != nil {
 		log.Println(bodyErr)
 	}
-	if status.ShouldFire == true {
-		fmt.Println("Your turn:")
-		var w1 string
-		n, err := fmt.Scanln(&w1)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(n)
 
-	}
 	fireUrl, fireErr := url.JoinPath(client.BaseURL, "/game/fire")
 	if fireErr != nil {
 		log.Println(fireErr)
@@ -182,5 +191,24 @@ func (client *Client) Shoot(cord string, status *models.Status) (string, error) 
 	if reqErr != nil {
 		log.Println(reqErr)
 	}
-	return "", nil
+	res, resErr := client.HTTPClient.Do(req)
+	if resErr != nil {
+		log.Println(resErr)
+	}
+	defer res.Body.Close()
+	data, dataErr := io.ReadAll(res.Body)
+	if dataErr != nil {
+		log.Println(dataErr)
+	}
+	jsonErr := json.Unmarshal(data, &fireResp)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+	}
+	return fireResp.Result, nil
+}
+
+func isValidCoordinate(coordinate string) bool {
+	pattern := `^[A-J](10|[1-9])$`
+	re := regexp.MustCompile(pattern)
+	return re.MatchString(coordinate)
 }
