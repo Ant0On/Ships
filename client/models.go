@@ -1,4 +1,4 @@
-package models
+package client
 
 type InitialData struct {
 	Coords     []string `json:"coords"`
@@ -13,11 +13,9 @@ type Board struct {
 }
 
 type Status struct {
-	Desc           string   `json:"desc"`
 	GameStatus     string   `json:"game_status"`
 	LastGameStatus string   `json:"last_game_status"`
 	Nick           string   `json:"nick"`
-	OppDesc        string   `json:"opp_desc"`
 	OppShots       []string `json:"opp_shots"`
 	Opponent       string   `json:"opponent"`
 	ShouldFire     bool     `json:"should_fire"`

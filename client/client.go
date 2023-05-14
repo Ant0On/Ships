@@ -1,18 +1,14 @@
 package client
 
 import (
-	"Ships/models"
 	"bytes"
 	"encoding/json"
 	"errors"
-	gui "github.com/grupawp/warships-gui/v2"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -20,6 +16,14 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
+}
+
+type IClient interface {
+	InitGame(desc, nick string, wpBot bool) (*InitialData, error)
+	Board() ([]string, error)
+	Descriptions() (*Description, error)
+	Status() (*Status, error)
+	Fire(cord string) (string, error)
 }
 
 func NewClient(baseURL string, timeOut time.Duration) *Client {
@@ -30,8 +34,9 @@ func NewClient(baseURL string, timeOut time.Duration) *Client {
 		},
 	}
 }
-func (client *Client) InitGame(desc, nick string, wpBot bool) (*models.InitialData, error) {
-	initialData := &models.InitialData{
+func (client *Client) InitGame(nick, desc string, wpBot bool) (*InitialData, error) {
+	time.Sleep(time.Second * 1)
+	initialData := &InitialData{
 		Desc:  desc,
 		Nick:  nick,
 		Wpbot: wpBot,
@@ -63,7 +68,7 @@ func (client *Client) InitGame(desc, nick string, wpBot bool) (*models.InitialDa
 	return initialData, respErr
 }
 func (client *Client) Board() ([]string, error) {
-	board := models.Board{}
+	board := Board{}
 	boardURL, urlErr := url.JoinPath(client.BaseURL, "/game/board")
 
 	if urlErr != nil {
@@ -93,21 +98,8 @@ func (client *Client) Board() ([]string, error) {
 
 }
 
-func convertCords(cords string) (int, int) {
-	x := int(cords[0] - 'A')
-	y, _ := strconv.Atoi(cords[1:])
-	y--
-	return x, y
-}
-
-func PlaceShips(cords []string, states [][]gui.State) {
-	for _, cord := range cords {
-		x, y := convertCords(cord)
-		states[x][y] = gui.Ship
-	}
-}
-func (client *Client) Descriptions() (*models.Description, error) {
-	desc := models.Description{}
+func (client *Client) Descriptions() (*Description, error) {
+	desc := Description{}
 
 	descUrl, urlErr := url.JoinPath(client.BaseURL, "/game/desc")
 	if urlErr != nil {
@@ -137,8 +129,8 @@ func (client *Client) Descriptions() (*models.Description, error) {
 	return &desc, resErr
 }
 
-func (client *Client) Status() (*models.Status, error) {
-	stats := models.Status{}
+func (client *Client) Status() (*Status, error) {
+	stats := Status{}
 	statusUrl, urlErr := url.JoinPath(client.BaseURL, "/game")
 
 	if urlErr != nil {
@@ -170,13 +162,12 @@ func (client *Client) Status() (*models.Status, error) {
 }
 
 func (client *Client) Fire(cord string) (string, error) {
-	cord = strings.ToUpper(cord)
-	isValid := isValidCoordinate(cord)
+	isValid := IsValidCoordinate(cord)
 	if isValid == false {
 		return "", errors.New("wrong type of coordinates. ex. (A1)")
 	}
-	fireData := models.Fire{Coord: cord}
-	fireResp := models.FireResponse{}
+	fireData := Fire{Coord: cord}
+	fireResp := FireResponse{}
 	body, bodyErr := json.Marshal(fireData)
 	if bodyErr != nil {
 		log.Println(bodyErr)
@@ -206,8 +197,7 @@ func (client *Client) Fire(cord string) (string, error) {
 	}
 	return fireResp.Result, nil
 }
-
-func isValidCoordinate(coordinate string) bool {
+func IsValidCoordinate(coordinate string) bool {
 	pattern := `^[A-J](10|[1-9])$`
 	re := regexp.MustCompile(pattern)
 	return re.MatchString(coordinate)
