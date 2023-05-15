@@ -1,10 +1,10 @@
 package client
 
 type InitialData struct {
-	Coords     []string `json:"coords"`
+	Coords     []string `json:"coords,omitempty"`
 	Desc       string   `json:"desc"`
 	Nick       string   `json:"nick"`
-	TargetNick string   `json:"target_nick"`
+	TargetNick string   `json:"target_nick,omitempty"`
 	Wpbot      bool     `json:"wpbot"`
 }
 
@@ -34,4 +34,9 @@ type Fire struct {
 
 type FireResponse struct {
 	Result string `json:"result"`
+}
+
+type ListData struct {
+	GameStatus string `json:"game_status"`
+	Nick       string `json:"nick"`
 }

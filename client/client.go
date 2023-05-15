@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"golang.org/x/exp/slog"
 	"io"
 	"log"
 	"net/http"
@@ -34,38 +35,46 @@ func NewClient(baseURL string, timeOut time.Duration) *Client {
 		},
 	}
 }
-func (client *Client) InitGame(nick, desc string, wpBot bool) (*InitialData, error) {
+func (client *Client) InitGame(nick, desc, targetNick string, wpBot bool) error {
 	time.Sleep(time.Second * 1)
-	initialData := &InitialData{
-		Desc:  desc,
-		Nick:  nick,
-		Wpbot: wpBot,
+	initialData := InitialData{
+		Desc:       desc,
+		Nick:       nick,
+		TargetNick: targetNick,
+		Wpbot:      wpBot,
 	}
 
-	body, bodyErr := json.Marshal(initialData)
-	if bodyErr != nil {
-		log.Println(bodyErr)
+	jsonData, jsonDataErr := json.Marshal(initialData)
+	if jsonDataErr != nil {
+		log.Println(jsonDataErr)
+		return jsonDataErr
 	}
+	reader := bytes.NewReader(jsonData)
 
 	initUrl, urlErr := url.JoinPath(client.BaseURL, "/game")
 	if urlErr != nil {
 		log.Println(urlErr)
 	}
 
-	req, reqErr := http.NewRequest("POST", initUrl, bytes.NewReader(body))
+	req, reqErr := http.NewRequest(http.MethodPost, initUrl, reader)
 	if reqErr != nil {
 		log.Println(reqErr)
+		return reqErr
 	}
-	req.Header.Add("Content-Type", "application/json")
 
 	resp, respErr := client.HTTPClient.Do(req)
 
+	slog.Info("client [InitGame]", slog.Any("initialData", initialData))
+
 	if respErr != nil {
 		log.Println(respErr)
+		return respErr
 	}
+	slog.Info("client [InitGame]", slog.Int("statusCode", resp.StatusCode))
 	client.Token = resp.Header.Get("X-Auth-Token")
+	slog.Info("client [InitGame]", slog.String("token", client.Token))
 
-	return initialData, respErr
+	return respErr
 }
 func (client *Client) Board() ([]string, error) {
 	board := Board{}
@@ -130,9 +139,8 @@ func (client *Client) Descriptions() (*Description, error) {
 }
 
 func (client *Client) Status() (*Status, error) {
-	stats := Status{}
+	var status Status
 	statusUrl, urlErr := url.JoinPath(client.BaseURL, "/game")
-
 	if urlErr != nil {
 		log.Println(urlErr)
 	}
@@ -153,12 +161,12 @@ func (client *Client) Status() (*Status, error) {
 	if dataErr != nil {
 		log.Println(dataErr)
 	}
-	jsonErr := json.Unmarshal(data, &stats)
+	jsonErr := json.Unmarshal(data, &status)
 	if jsonErr != nil {
 		log.Println(jsonErr)
 	}
 
-	return &stats, resErr
+	return &status, resErr
 }
 
 func (client *Client) Fire(cord string) (string, error) {
@@ -197,6 +205,38 @@ func (client *Client) Fire(cord string) (string, error) {
 	}
 	return fireResp.Result, nil
 }
+
+func (client *Client) PlayersList() (ListData, error) {
+	var listData ListData
+	time.Sleep(time.Second * 1)
+	listUrl, urlErr := url.JoinPath(client.BaseURL, "/game/list")
+	if urlErr != nil {
+		log.Println(urlErr)
+		return listData, urlErr
+	}
+	req, reqErr := http.NewRequest("GET", listUrl, nil)
+	if reqErr != nil {
+		log.Println(reqErr)
+		return listData, reqErr
+	}
+	res, resErr := client.HTTPClient.Do(req)
+	if resErr != nil {
+		log.Println(resErr)
+		return listData, resErr
+	}
+	defer res.Body.Close()
+	data, dataErr := io.ReadAll(res.Body)
+	if dataErr != nil {
+		log.Println(dataErr)
+	}
+	jsonErr := json.Unmarshal(data, &listData)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+	}
+
+	return listData, resErr
+}
+
 func IsValidCoordinate(coordinate string) bool {
 	pattern := `^[A-J](10|[1-9])$`
 	re := regexp.MustCompile(pattern)
