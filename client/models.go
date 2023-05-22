@@ -40,3 +40,22 @@ type ListData struct {
 	GameStatus string `json:"game_status"`
 	Nick       string `json:"nick"`
 }
+type Top10 struct {
+	Stats []struct {
+		Games  int    `json:"games"`
+		Nick   string `json:"nick"`
+		Points int    `json:"points"`
+		Rank   int    `json:"rank"`
+		Wins   int    `json:"wins"`
+	} `json:"stats"`
+}
+
+type PlayerStats struct {
+	Stats struct {
+		Games  int    `json:"games"`
+		Nick   string `json:"nick"`
+		Points int    `json:"points"`
+		Rank   int    `json:"rank"`
+		Wins   int    `json:"wins"`
+	} `json:"stats"`
+}

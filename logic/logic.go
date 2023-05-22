@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	gui "github.com/grupawp/warships-gui/v2"
+	"github.com/pterm/pterm"
 	"log"
 	"time"
 )
@@ -20,57 +21,16 @@ func NewApp(client *client.Client) *App {
 }
 
 func (app *App) Run() error {
-	time.Sleep(time.Second * 1)
-	listData, listDataErr := app.client.PlayersList()
-
-	fmt.Println(listData)
-	if listDataErr != nil {
-		log.Println(listDataErr)
-		return listDataErr
+	generateErr := app.generateMenu()
+	if generateErr != nil {
+		return generateErr
 	}
-	var targetNick string
-	var nick string
-	fmt.Print("Enter Your nick:")
-	fmt.Scanln(&nick)
-	fmt.Println("Enter enemy nick: ")
-	fmt.Scanln(&targetNick)
-
-	initErr := app.client.InitGame(nick, "You can run, but you can't hide", targetNick, false)
-	if initErr != nil {
-		log.Println(initErr)
-		return initErr
-	}
-
-	startErr := app.waitToStart()
-	if startErr != nil {
-		log.Println(startErr)
-		return startErr
-	}
-	description, descErr := app.client.Descriptions()
-	if descErr != nil {
-		log.Println(descErr)
-		return descErr
-	}
-	myShips, shipsErr := app.client.Board()
-	if shipsErr != nil {
-		log.Println(shipsErr)
-		return shipsErr
-	}
-	myBoard, enemyBoard, ui := CreateBoard(description)
-	boardState.InitialStates(myBoard, enemyBoard, myShips)
-	go func() error {
-		appError := app.gameCourse(myBoard, enemyBoard, ui)
-		if appError != nil {
-			log.Println(appError)
-			return appError
-		}
-		return nil
-	}()
-	ui.Start(nil)
 	return nil
 }
 
 func (app *App) waitToStart() error {
+	stop := make(chan bool)
+	go app.everyThreeSecond(stop)
 	for {
 		time.Sleep(time.Second * 1)
 		gameStatus, statusErr := app.client.Status()
@@ -79,79 +39,159 @@ func (app *App) waitToStart() error {
 			return statusErr
 		}
 		fmt.Println(gameStatus.GameStatus)
+
 		if gameStatus.GameStatus == "game_in_progress" {
 			break
 		}
 	}
 	return nil
 }
-
-func (app *App) gameCourse(myBoard, enemyBoard *gui.Board, ui *gui.GUI) error {
+func (app *App) everyThreeSecond(stop chan bool) {
+	ticker := time.NewTicker(3 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			refreshErr := app.client.Refresh()
+			if refreshErr != nil {
+				return
+			}
+		case <-stop:
+			ticker.Stop()
+			return
+		}
+	}
+}
+func (app *App) gameCourse(myBoard, enemyBoard *gui.Board) error {
+	ch := make(chan bool)
+	exit := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	status, statusErr := app.client.Status()
 	if statusErr != nil {
 		log.Println(statusErr)
 		return statusErr
 	}
+	fireRes := ""
 	hits := 0
 	totalShoots := 0
 	txt := gui.NewText(50, 5, "Let's start", nil)
-	ui.Draw(txt)
+	boardState.AccuracyText = gui.NewText(5, 30, "Accuracy: 0", nil)
+	timer := gui.NewText(50, 20, "", nil)
+	boardState.Ui.Draw(timer)
+	boardState.Ui.Draw(txt)
 	mark := gui.NewText(65, 15, "", nil)
-	ui.Draw(mark)
-	time.Sleep(time.Second * 2)
-	for status.GameStatus == "game_in_progress" {
-		for status.ShouldFire == true {
-			if len(status.OppShots) != 0 {
-				boardState.EnemyShoot(myBoard, status)
-			}
-			txt.SetBgColor(gui.White)
-			txt.SetText("It's your turn!")
-			time.Sleep(time.Second * 2)
-			txt.SetText("Press on opponent's coordinates to shoot")
-			var coords string
-			for {
-				coords = enemyBoard.Listen(context.TODO())
-				x, y := ConvertCords(coords)
-				if boardState.EnemyState[x][y] == "" {
-					break
-				}
-			}
-			boardState.AccuracyText = gui.NewText(5, 30, "AccuracyText: 0", nil)
-			ui.Draw(boardState.AccuracyText)
-			mark.SetBgColor(gui.White)
-			mark.SetText(fmt.Sprintf("Coordinate: %s", coords))
-			time.Sleep(time.Second * 1)
+	boardState.Ui.Draw(mark)
+	time.Sleep(time.Millisecond * 200)
 
-			fire, fireErr := app.client.Fire(coords)
-			if fireErr != nil {
-				log.Println(fireErr)
-				return fireErr
+	go func() {
+		for {
+			timerStatus, _ := app.client.Status()
+			time.Sleep(time.Millisecond / 4)
+			if timerStatus.ShouldFire == true {
+				timer.SetText(fmt.Sprintf("Time left: %d", timerStatus.Timer))
+			} else {
+				timer.SetText("")
 			}
-			if fire != "miss" {
+			boardState.EnemyShoot(myBoard, status)
+		}
+	}()
+
+	go func() {
+		for {
+			status, _ = app.client.Status()
+			for status.ShouldFire == true {
+				boardState.EnemyShoot(myBoard, status)
+				txt.SetBgColor(gui.White)
+				txt.SetText("It's your turn!")
+				time.Sleep(time.Millisecond * 200)
+				txt.SetText("Press on opponent's coordinates to shoot")
+				var coords string
+				for {
+					coords = enemyBoard.Listen(context.TODO())
+					x, y := ConvertCords(coords)
+					if boardState.EnemyState[x][y] == "" {
+						break
+					}
+				}
+				fire, fireErr := app.client.Fire(coords)
+				if fireErr != nil {
+					log.Println(fireErr)
+					return
+				}
+				mark.SetBgColor(gui.White)
+				mark.SetText(fmt.Sprintf("Coordinate: %s", coords))
+				boardState.MarkMyShoot(mark, enemyBoard, fire, coords)
+				fireRes = fire
+				status, _ = app.client.Status()
+			}
+		}
+	}()
+	go func() {
+		for {
+			time.Sleep(time.Millisecond * 200)
+
+			if fireRes != "miss" && fireRes != "" {
 				hits++
 			}
-			totalShoots++
+			if fireRes != "" {
+				totalShoots++
+			}
 			boardState.Accuracy = boardState.countAccuracy(hits, totalShoots)
-			boardState.MarkMyShoot(mark, enemyBoard, fire, coords)
-			status, _ = app.client.Status()
-			time.Sleep(time.Second * 1)
 		}
-		time.Sleep(time.Second * 1)
-		status, _ = app.client.Status()
-	}
-	if len(status.OppShots) != 0 {
-		boardState.EnemyShoot(myBoard, status)
-	}
-	checkWinner(status, txt)
+	}()
+	go func() {
+		for {
+			if status.GameStatus == "ended" {
+				boardState.EnemyShoot(myBoard, status)
+				boardState.Ui.Draw(boardState.AccuracyText)
+				checkWinner(status, txt)
+				time.Sleep(time.Second * 2)
+				ch <- checkWinner(status, txt)
+				close(ch)
+				break
+			}
+		}
+	}()
+	go func() {
+		for v := range ch {
+			log.Println(v)
+		}
+		close(exit)
+		cancel()
+	}()
+	boardState.Ui.Start(ctx, nil)
+	app.client.HTTPClient.CloseIdleConnections()
+	<-exit
 	return nil
 }
 
-func checkWinner(status *client.Status, txt *gui.Text) {
+func checkWinner(status *client.Status, txt *gui.Text) bool {
 	if status.LastGameStatus == "win" {
 		txt.SetBgColor(gui.Green)
 		txt.SetText("Congratulation, you wiped your opponent off the board")
+		return true
 	} else {
 		txt.SetBgColor(gui.Red)
 		txt.SetText("I'm sorry, it's clearly not your day. You lost")
+		return false
 	}
+}
+
+func initialConfig() ([]string, bool) {
+	var nickName, targetNick, description string
+	var decision bool
+	pterm.Info.Println("Enter your nickname: ")
+	nickName, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
+	pterm.Println() // Blank line
+	pterm.Info.Println("Enter your description: ")
+	description, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
+	pterm.Println() // Blank line
+	pterm.Info.Println("Do you want to fight against bot? ")
+	decision, _ = pterm.DefaultInteractiveConfirm.Show()
+	pterm.Println() // Blank line
+	if decision == true {
+		return []string{nickName, description, ""}, decision
+	}
+	pterm.Info.Println("Enter your opponent's nickname: ")
+	targetNick, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
+	return []string{nickName, description, targetNick}, decision
 }

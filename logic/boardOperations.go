@@ -2,9 +2,11 @@ package logic
 
 import (
 	"Ships/client"
+	"context"
 	"fmt"
 	gui "github.com/grupawp/warships-gui/v2"
 	"github.com/mitchellh/go-wordwrap"
+	"golang.org/x/exp/slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +15,11 @@ import (
 type BoardState struct {
 	MyState      [10][10]gui.State
 	EnemyState   [10][10]gui.State
+	Ships        [10][10]gui.State
+	Ui           *gui.GUI
+	MyBoard      *gui.Board
 	AccuracyText *gui.Text
+	TimerTxt     *gui.Text
 	Accuracy     float64
 }
 
@@ -30,21 +36,21 @@ func PlaceShips(cords []string, states [][]gui.State) {
 	}
 }
 
-func CreateBoard(description *client.Description) (*gui.Board, *gui.Board, *gui.GUI) {
-	ui := gui.NewGUI(true)
+func CreateBoard(description *client.Description) (*gui.Board, *gui.Board) {
+	boardState.Ui = gui.NewGUI(true)
 	myBoard := gui.NewBoard(1, 3, nil)
 	enemyBoard := gui.NewBoard(95, 3, nil)
 	yourNick := gui.NewText(20, 1, description.Nick, nil)
 	enemyNick := gui.NewText(95, 1, description.Opponent, nil)
 
-	ui.Draw(myBoard)
-	ui.Draw(enemyBoard)
-	ui.Draw(yourNick)
-	ui.Draw(enemyNick)
+	boardState.Ui.Draw(myBoard)
+	boardState.Ui.Draw(enemyBoard)
+	boardState.Ui.Draw(yourNick)
+	boardState.Ui.Draw(enemyNick)
 
-	handleDesc(ui, description.Desc, description.OppDesc)
+	handleDesc(description.Desc, description.OppDesc)
 
-	return myBoard, enemyBoard, ui
+	return myBoard, enemyBoard
 }
 
 func (boardState *BoardState) MarkMyShoot(mark *gui.Text, enemyBoard *gui.Board, fireResult string, coords string) {
@@ -95,17 +101,93 @@ func (boardState *BoardState) EnemyShoot(myBoard *gui.Board, status *client.Stat
 	myBoard.SetStates(boardState.MyState)
 }
 
-func handleDesc(ui *gui.GUI, myDesc, enemyDesc string) {
+func handleDesc(myDesc, enemyDesc string) {
 	wrapMyDesc := strings.Split(wordwrap.WrapString(myDesc, 40), "\n")
 	wrapEnemyDesc := strings.Split(wordwrap.WrapString(enemyDesc, 40), "\n")
 
 	for i, desc := range wrapMyDesc {
-		ui.Draw(gui.NewText(2, 26+i, desc, nil))
+		boardState.Ui.Draw(gui.NewText(2, 26+i, desc, nil))
 	}
 	for i, desc := range wrapEnemyDesc {
-		ui.Draw(gui.NewText(97, 26+i, desc, nil))
+		boardState.Ui.Draw(gui.NewText(97, 26+i, desc, nil))
 	}
 }
 func (boardState *BoardState) countAccuracy(hits, totalShoots int) float64 {
 	return float64(hits) / float64(totalShoots)
+}
+func makeShips() []string {
+	ch := make(chan string, 20)
+	exit := make(chan struct{})
+	boardState.makeBoard()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	coords := make([]string, 20)
+	var square string
+	var availableCoords, fCoords []string
+	var forNowBorders []int
+	newShip := []int{4, 7, 10, 12, 14, 16, 17, 18, 19}
+
+	go func() {
+		for i := 0; i < len(coords); i++ {
+
+			switch {
+			case i == 0:
+				square = boardState.MyBoard.Listen(context.TODO())
+			case slices.Contains(newShip, i):
+				square, availableCoords, forNowBorders = boardState.createNewShip(forNowBorders, availableCoords)
+			default:
+				square = boardState.create(availableCoords)
+			}
+
+			options, borders := possibilities(square, availableCoords, forNowBorders)
+			availableCoords = append(options)
+			forNowBorders = append(borders)
+			ch <- square
+			time.Sleep(time.Millisecond * 300)
+		}
+		close(ch)
+	}()
+	go func() {
+		for v := range ch {
+			fCoords = append(fCoords, v)
+		}
+		close(exit)
+		cancel()
+	}()
+
+	boardState.Ui.Start(ctx, nil)
+
+	<-exit
+
+	return fCoords
+
+}
+
+func possibilities(square string, finalCoords []string, finalBorder []int) ([]string, []int) {
+	x, y := ConvertCords(square)
+	boardState.MyState[x][y] = gui.Ship
+
+	available, checkX, checkY := checkShip(x, y)
+
+	for i := 0; i < len(available); i++ {
+		for j := 0; j < len(available[0]); j++ {
+			if boardState.MyState[checkX[j]][checkY[i]] != gui.Ship && available[i][j] &&
+				boardState.MyState[checkX[j]][checkY[i]] != gui.Hit {
+				boardState.MyState[checkX[j]][checkY[i]] = gui.Miss
+				finalCoords = append(finalCoords, convertToString(checkX[j], checkY[i]))
+			}
+			finalBorder = append(finalBorder, checkX[j], checkY[i])
+		}
+	}
+	boardState.MyBoard.SetStates(boardState.MyState)
+	return finalCoords, finalBorder
+}
+
+func checkShip(x, y int) ([][]bool, []int, []int) {
+
+	available := availableChecker(x, y)
+	checkX := xChecker(x)
+	checkY := yChecker(y)
+	return available, checkX, checkY
 }
