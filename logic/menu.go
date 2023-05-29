@@ -14,13 +14,18 @@ func (app *App) generateMenu() error {
 	pterm.DefaultCenter.Println(s)
 	pterm.Println() //
 	for {
-		var options []string
-		options = append(options, fmt.Sprint("Show potential enemies"))
-		options = append(options, fmt.Sprint("Start game"))
-		options = append(options, fmt.Sprint("Show top 10 players"))
-		options = append(options, fmt.Sprint("Show player stats"))
+		endGame := true
+		options := []string{
+			"Show potential enemies",
+			"Start game",
+			"Show top 10 players",
+			"Show player stats",
+			"Quit",
+		}
+		pterm.Println() //
 		selectedOption, _ := pterm.DefaultInteractiveSelect.WithOptions(options).Show()
 		pterm.Info.Printfln("Selected option: %s", pterm.Green(selectedOption))
+		pterm.Println() //
 		switch selectedOption {
 		case options[0]:
 			time.Sleep(time.Second * 1)
@@ -29,6 +34,7 @@ func (app *App) generateMenu() error {
 			if playerListErr != nil {
 				return playerListErr
 			}
+			pterm.Println() //
 		case options[1]:
 			var coords []string
 			info, bot := initialConfig()
@@ -61,22 +67,22 @@ func (app *App) generateMenu() error {
 				return shipsErr
 			}
 			time.Sleep(time.Millisecond * 300)
-			myBoard, enemyBoard := CreateBoard(description)
-			boardState.InitialStates(myBoard, enemyBoard, myShips)
-			appError := app.gameCourse(myBoard, enemyBoard)
+			createBoard(description)
+			boardState.initialStates(myShips)
+			appError := app.gameCourse()
 			if appError != nil {
 				log.Println(appError)
 				return appError
 			}
-			fmt.Print("Do you want to start another game? (Yes/No)")
-			result, _ = pterm.DefaultInteractiveConfirm.Show()
+			fmt.Print("Do you want to start another game? ")
+			endGame, _ = pterm.DefaultInteractiveConfirm.Show()
 			pterm.Println() // Blank line
-			pterm.Info.Printfln("You answered: %s", boolToText(result))
-			if result == false {
+			pterm.Info.Printfln("You answered: %s", boolToText(endGame))
+			pterm.Println() //
+			if endGame == false {
 				break
 			}
-			pterm.Println() //
-			time.Sleep(time.Second * 30)
+			time.Sleep(time.Second * 3)
 		case options[2]:
 			pterm.Info.Println("Top 10 players: ")
 			playerListErr := app.client.Top10()
@@ -93,8 +99,15 @@ func (app *App) generateMenu() error {
 			if playerListErr != nil {
 				return playerListErr
 			}
+			pterm.Println() //
+		case options[4]:
+			endGame = false
+		}
+		if endGame == false {
+			break
 		}
 	}
+	return nil
 }
 func boolToText(b bool) string {
 	if b {

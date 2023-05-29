@@ -9,7 +9,7 @@ import (
 
 const (
 	baseURL = "https://go-pjatk-server.fly.dev/api"
-	timeOut = time.Minute
+	timeOut = time.Second * 30
 )
 
 func main() {

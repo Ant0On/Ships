@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pterm/pterm"
 	"golang.org/x/exp/slog"
 	"io"
 	"log"
@@ -52,6 +53,7 @@ func (client *Client) InitGame(initialProps InitialData) error {
 	}
 
 	resp, respErr := client.HTTPClient.Do(req)
+	client.handleBadReq(resp, respErr, req)
 
 	slog.Info("client [InitGame]", slog.Any("initialData", initialData))
 
@@ -136,6 +138,7 @@ func (client *Client) Fire(cord string) (string, error) {
 		log.Println(fireErr)
 		return "", fireErr
 	}
+
 	data, _ := client.post(fireUrl, bytes.NewReader(body))
 
 	jsonErr := json.Unmarshal(data, &fireResp)
@@ -180,12 +183,14 @@ func (client *Client) Abandon() error {
 		return reqErr
 	}
 	res, resErr := client.HTTPClient.Do(req)
+	client.handleBadReq(res, resErr, req)
 	if resErr != nil {
 		log.Println(resErr)
 		return resErr
 	}
 	defer res.Body.Close()
 
+	// print the response body
 	return nil
 }
 
@@ -217,14 +222,14 @@ func (client *Client) Top10() error {
 		log.Println(jsonErr)
 		return jsonErr
 	}
-	for _, d := range top10.Stats {
-		fmt.Print(d.Rank)
-		fmt.Print(" Nick: ", d.Nick)
-		fmt.Print(" Games: ", d.Games)
-		fmt.Print(" Wins: ", d.Wins)
-		fmt.Print(" Points: ", d.Points)
-		fmt.Println()
+	top10Data := make([][]string, 11)
+	top10Data[0] = append(top10Data[0], "Rank", "Nick", "Games", "Wins", "Points")
+	for i, d := range top10.Stats {
+		top10Data[i+1] = append(top10Data[i+1], fmt.Sprintf("%d", d.Rank), d.Nick,
+			fmt.Sprintf("%d", d.Games), fmt.Sprintf("%d", d.Wins), fmt.Sprintf("%d", d.Points))
 	}
+	pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(top10Data).Render()
+
 	return nil
 }
 
@@ -244,12 +249,13 @@ func (client *Client) PlayerStats(player string) error {
 		return jsonErr
 	}
 
-	fmt.Print(playerStats.Stats.Rank)
-	fmt.Print(" Nick: ", playerStats.Stats.Nick)
-	fmt.Print(" Games: ", playerStats.Stats.Games)
-	fmt.Print(" Wins: ", playerStats.Stats.Wins)
-	fmt.Print(" Points: ", playerStats.Stats.Points)
-	fmt.Println()
+	pterm.DefaultTable.WithHasHeader().WithBoxed().WithData(pterm.TableData{
+		{"Rank", "Nick", "Games", "Wins", "Points"},
+		{fmt.Sprintf("%d", playerStats.Stats.Rank), playerStats.Stats.Nick,
+			fmt.Sprintf("%d", playerStats.Stats.Games), fmt.Sprintf("%d", playerStats.Stats.Wins),
+			fmt.Sprintf("%d", playerStats.Stats.Points)},
+	}).Render()
+
 	return nil
 }
 
@@ -265,13 +271,15 @@ func (client *Client) get(url string) ([]byte, error) {
 		log.Println(reqErr)
 		return nil, reqErr
 	}
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Millisecond * 100)
 
 	res, resErr := client.HTTPClient.Do(req)
+
 	if resErr != nil {
 		log.Println(resErr)
 		return nil, resErr
 	}
+	client.handleBadReq(res, resErr, req)
 	defer res.Body.Close()
 
 	bodyData, dataErr := io.ReadAll(res.Body)
@@ -289,7 +297,10 @@ func (client *Client) post(url string, reader *bytes.Reader) ([]byte, error) {
 		log.Println(reqErr)
 		return nil, reqErr
 	}
+	time.Sleep(time.Millisecond * 100)
 	res, resErr := client.HTTPClient.Do(req)
+	time.Sleep(time.Millisecond * 200)
+	client.handleBadReq(res, resErr, req)
 	if resErr != nil {
 		log.Println(resErr)
 		return nil, resErr
@@ -301,4 +312,10 @@ func (client *Client) post(url string, reader *bytes.Reader) ([]byte, error) {
 		return nil, dataErr
 	}
 	return data, nil
+}
+func (client *Client) handleBadReq(resp *http.Response, respErr error, req *http.Request) {
+	for resp.StatusCode == 503 {
+		time.Sleep(time.Second * 1)
+		resp, respErr = client.HTTPClient.Do(req)
+	}
 }

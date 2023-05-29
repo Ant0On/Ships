@@ -3,76 +3,64 @@ package logic
 import (
 	"Ships/client"
 	"context"
-	"fmt"
 	gui "github.com/grupawp/warships-gui/v2"
-	"github.com/mitchellh/go-wordwrap"
 	"golang.org/x/exp/slices"
-	"strconv"
-	"strings"
 	"time"
 )
 
 type BoardState struct {
-	MyState      [10][10]gui.State
-	EnemyState   [10][10]gui.State
-	Ships        [10][10]gui.State
-	Ui           *gui.GUI
-	MyBoard      *gui.Board
-	AccuracyText *gui.Text
-	TimerTxt     *gui.Text
-	Accuracy     float64
+	Ui         *gui.GUI
+	MyBoard    *gui.Board
+	EnemyState [10][10]gui.State
+	MyState    [10][10]gui.State
+	EnemyBoard *gui.Board
 }
 
-func ConvertCords(cords string) (int, int) {
-	x := int(cords[0] - 'A')
-	y, _ := strconv.Atoi(cords[1:])
-	y--
-	return x, y
-}
-func PlaceShips(cords []string, states [][]gui.State) {
+const (
+	missState = gui.Miss
+	hitState  = gui.Hit
+	shipState = gui.Ship
+)
+
+func placeShips(cords []string, states [][]gui.State) {
 	for _, cord := range cords {
-		x, y := ConvertCords(cord)
+		x, y := convertCords(cord)
 		states[x][y] = gui.Ship
 	}
 }
 
-func CreateBoard(description *client.Description) (*gui.Board, *gui.Board) {
+func createBoard(description *client.Description) {
 	boardState.Ui = gui.NewGUI(true)
-	myBoard := gui.NewBoard(1, 3, nil)
-	enemyBoard := gui.NewBoard(95, 3, nil)
-	yourNick := gui.NewText(20, 1, description.Nick, nil)
-	enemyNick := gui.NewText(95, 1, description.Opponent, nil)
+	boardState.MyBoard = gui.NewBoard(3, 10, nil)
+	boardState.EnemyBoard = gui.NewBoard(98, 10, nil)
+	yourNick := gui.NewText(20, 3, description.Nick, nil)
+	enemyNick := gui.NewText(110, 3, description.Opponent, nil)
 
-	boardState.Ui.Draw(myBoard)
-	boardState.Ui.Draw(enemyBoard)
+	boardState.Ui.Draw(boardState.MyBoard)
+	boardState.Ui.Draw(boardState.EnemyBoard)
 	boardState.Ui.Draw(yourNick)
 	boardState.Ui.Draw(enemyNick)
 
 	handleDesc(description.Desc, description.OppDesc)
 
-	return myBoard, enemyBoard
 }
 
-func (boardState *BoardState) MarkMyShoot(mark *gui.Text, enemyBoard *gui.Board, fireResult string, coords string) {
-	if fireResult == "hit" || fireResult == "sunk" {
-		mark.SetBgColor(gui.Red)
-		mark.SetText(fireResult)
-		x, y := ConvertCords(coords)
-		boardState.EnemyState[x][y] = gui.Hit
-		enemyBoard.SetStates(boardState.EnemyState)
+func (boardState *BoardState) markMyShoot(fireResult string, coords string) {
+	if fireResult == "hit" {
+		markShootConf(hitState, coords)
+	} else if fireResult == "sunk" {
+		x, y := convertCords(coords)
+		neighbours := checkNeighbour(x, y)
+		markSunk(neighbours)
+		markShootConf(shipState, coords)
 	} else {
-		mark.SetBgColor(gui.Blue)
-		mark.SetText(fireResult)
-		x, y := ConvertCords(coords)
-		boardState.EnemyState[x][y] = gui.Miss
-		enemyBoard.SetStates(boardState.EnemyState)
+		markShootConf(missState, coords)
 	}
-	boardState.AccuracyText.SetBgColor(gui.NewColor(184, 27, 227))
-	boardState.AccuracyText.SetText(fmt.Sprintf("AccuracyText: %.2f", boardState.Accuracy))
-	time.Sleep(time.Second * 2)
 
 }
-func (boardState *BoardState) InitialStates(myBoard, enemyBoard *gui.Board, coords []string) {
+func (boardState *BoardState) initialStates(coords []string) {
+	boardState.MyState = [10][10]gui.State{}
+	boardState.EnemyState = [10][10]gui.State{}
 
 	for i := range boardState.MyState {
 		boardState.MyState[i] = [10]gui.State{}
@@ -82,39 +70,25 @@ func (boardState *BoardState) InitialStates(myBoard, enemyBoard *gui.Board, coor
 	for i := range stateSlice {
 		stateSlice[i] = boardState.MyState[i][:]
 	}
-	PlaceShips(coords, stateSlice)
-	myBoard.SetStates(boardState.MyState)
-	enemyBoard.SetStates(boardState.EnemyState)
+	placeShips(coords, stateSlice)
+	boardState.MyBoard.SetStates(boardState.MyState)
+	boardState.EnemyBoard.SetStates(boardState.EnemyState)
 
 }
-func (boardState *BoardState) EnemyShoot(myBoard *gui.Board, status *client.Status) {
+func (boardState *BoardState) enemyShoot(status *client.Status) {
 	for _, coords := range status.OppShots {
-		x, y := ConvertCords(coords)
+		x, y := convertCords(coords)
 
 		switch state := &boardState.MyState[x][y]; *state {
-		case gui.Hit, gui.Ship:
-			*state = gui.Hit
+		case hitState, shipState:
+			*state = hitState
 		default:
-			*state = gui.Miss
+			*state = missState
 		}
 	}
-	myBoard.SetStates(boardState.MyState)
+	boardState.MyBoard.SetStates(boardState.MyState)
 }
 
-func handleDesc(myDesc, enemyDesc string) {
-	wrapMyDesc := strings.Split(wordwrap.WrapString(myDesc, 40), "\n")
-	wrapEnemyDesc := strings.Split(wordwrap.WrapString(enemyDesc, 40), "\n")
-
-	for i, desc := range wrapMyDesc {
-		boardState.Ui.Draw(gui.NewText(2, 26+i, desc, nil))
-	}
-	for i, desc := range wrapEnemyDesc {
-		boardState.Ui.Draw(gui.NewText(97, 26+i, desc, nil))
-	}
-}
-func (boardState *BoardState) countAccuracy(hits, totalShoots int) float64 {
-	return float64(hits) / float64(totalShoots)
-}
 func makeShips() []string {
 	ch := make(chan string, 20)
 	exit := make(chan struct{})
@@ -127,6 +101,8 @@ func makeShips() []string {
 	var availableCoords, fCoords []string
 	var forNowBorders []int
 	newShip := []int{4, 7, 10, 12, 14, 16, 17, 18, 19}
+	legendInfo := gui.NewText(60, 5, "Create a four-masted ship", nil)
+	boardState.Ui.Draw(legendInfo)
 
 	go func() {
 		for i := 0; i < len(coords); i++ {
@@ -135,6 +111,7 @@ func makeShips() []string {
 			case i == 0:
 				square = boardState.MyBoard.Listen(context.TODO())
 			case slices.Contains(newShip, i):
+				informAboutShip(i, legendInfo)
 				square, availableCoords, forNowBorders = boardState.createNewShip(forNowBorders, availableCoords)
 			default:
 				square = boardState.create(availableCoords)
@@ -165,7 +142,7 @@ func makeShips() []string {
 }
 
 func possibilities(square string, finalCoords []string, finalBorder []int) ([]string, []int) {
-	x, y := ConvertCords(square)
+	x, y := convertCords(square)
 	boardState.MyState[x][y] = gui.Ship
 
 	available, checkX, checkY := checkShip(x, y)
@@ -190,4 +167,62 @@ func checkShip(x, y int) ([][]bool, []int, []int) {
 	checkX := xChecker(x)
 	checkY := yChecker(y)
 	return available, checkX, checkY
+}
+
+func markShootConf(state gui.State, fireInfo string) {
+	x, y := convertCords(fireInfo)
+	boardState.EnemyState[x][y] = state
+	//if state == gui.Hit {
+	//	count := countNeighbors(boardState.EnemyState, x, y)
+	//	fmt.Println(count)
+	//}
+	boardState.EnemyBoard.SetStates(boardState.EnemyState)
+
+}
+func countNeighbors(matrix [10][10]gui.State, row, col int) int {
+
+	numRows := len(matrix)
+	numCols := len(matrix[0])
+
+	// Define the boundaries of the submatrix
+	startRow := row - 1
+	endRow := row + 1
+	startCol := col - 1
+	endCol := col + 1
+
+	// Adjust the boundaries to stay within the matrix limits
+	if startRow < 0 {
+		startRow = 0
+	}
+	if endRow >= numRows {
+		endRow = numRows - 1
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if endCol >= numCols {
+		endCol = numCols - 1
+	}
+
+	// Base case: Check if the current square is empty (0)
+	if matrix[row][col] == gui.Empty {
+		return 0
+	}
+
+	// Mark the current square as visited by setting it to 0
+	matrix[row][col] = gui.Empty
+
+	// Recursively count the neighbors within the submatrix
+	count := 0
+
+	for i := startRow; i <= endRow; i++ {
+		for j := startCol; j <= endCol; j++ {
+			if i == row && j == col {
+				continue // Skip the current square
+			}
+			count += countNeighbors(matrix, i, j)
+		}
+	}
+
+	return count
 }
