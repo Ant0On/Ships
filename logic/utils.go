@@ -282,7 +282,7 @@ func WrapEndInfo(txt string, config *gui.TextConfig) {
 	}
 }
 func validateName(nickName string) string {
-	for len(nickName) != 1 || len(nickName) > 10 {
+	for len(nickName) == 1 || len(nickName) > 10 {
 		pterm.Info.Println("Nick should be in range (2 -10) ")
 		pterm.Info.Println("Enter your nickname: ")
 		nickName, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()

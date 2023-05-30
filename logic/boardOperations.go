@@ -172,57 +172,6 @@ func checkShip(x, y int) ([][]bool, []int, []int) {
 func markShootConf(state gui.State, fireInfo string) {
 	x, y := convertCords(fireInfo)
 	boardState.EnemyState[x][y] = state
-	//if state == gui.Hit {
-	//	count := countNeighbors(boardState.EnemyState, x, y)
-	//	fmt.Println(count)
-	//}
 	boardState.EnemyBoard.SetStates(boardState.EnemyState)
 
-}
-func countNeighbors(matrix [10][10]gui.State, row, col int) int {
-
-	numRows := len(matrix)
-	numCols := len(matrix[0])
-
-	// Define the boundaries of the submatrix
-	startRow := row - 1
-	endRow := row + 1
-	startCol := col - 1
-	endCol := col + 1
-
-	// Adjust the boundaries to stay within the matrix limits
-	if startRow < 0 {
-		startRow = 0
-	}
-	if endRow >= numRows {
-		endRow = numRows - 1
-	}
-	if startCol < 0 {
-		startCol = 0
-	}
-	if endCol >= numCols {
-		endCol = numCols - 1
-	}
-
-	// Base case: Check if the current square is empty (0)
-	if matrix[row][col] == gui.Empty {
-		return 0
-	}
-
-	// Mark the current square as visited by setting it to 0
-	matrix[row][col] = gui.Empty
-
-	// Recursively count the neighbors within the submatrix
-	count := 0
-
-	for i := startRow; i <= endRow; i++ {
-		for j := startCol; j <= endCol; j++ {
-			if i == row && j == col {
-				continue // Skip the current square
-			}
-			count += countNeighbors(matrix, i, j)
-		}
-	}
-
-	return count
 }
