@@ -102,14 +102,12 @@ func (app *App) gameCourse() error {
 	go func() {
 		for {
 			timerStatus, _ := app.client.Status()
-			time.Sleep(time.Second / 4)
-			i := timerStatus.Timer
-			if timerStatus.ShouldFire == true {
+			for i := 60; timerStatus.ShouldFire == true; i-- {
 				gameConf.timer.SetText(fmt.Sprintf("Time left: %d", i))
-				i--
-			} else {
-				gameConf.timer.SetText("")
+				time.Sleep(time.Millisecond * 900)
+				timerStatus, _ = app.client.Status()
 			}
+			gameConf.timer.SetText("")
 			boardState.enemyShoot(status)
 		}
 	}()
