@@ -222,14 +222,14 @@ func initialConfig() ([]string, bool) {
 	var decision bool
 	pterm.Info.Println("Enter your nickname: ")
 	nickName, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
-	//nickName = validateName(nickName)
-	pterm.Println() // Blank line
+	nickName = validateName(nickName)
+	pterm.Println()
 	pterm.Info.Println("Enter your description: ")
 	description, _ = pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
-	pterm.Println() // Blank line
+	pterm.Println()
 	pterm.Info.Println("Do you want to fight against bot? ")
 	decision, _ = pterm.DefaultInteractiveConfirm.Show()
-	pterm.Println() // Blank line
+	pterm.Println()
 	if decision == true {
 		return []string{nickName, description, ""}, decision
 	}
