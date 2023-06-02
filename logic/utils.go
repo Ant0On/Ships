@@ -34,17 +34,17 @@ func (boardState *BoardState) makeBoard() {
 	boardState.Ui.Draw(txt)
 }
 
-func (boardState *BoardState) create(availableCoords []string) string {
+func (boardState *BoardState) create(availableCoords []string, ctx context.Context) string {
 	var square string
 	for {
-		square = boardState.MyBoard.Listen(context.TODO())
+		square = boardState.MyBoard.Listen(ctx)
 		if slices.Contains(availableCoords, square) {
 			break
 		}
 	}
 	return square
 }
-func (boardState *BoardState) createNewShip(borders []int, availableCoords []string) (string, []string, []int) {
+func (boardState *BoardState) createNewShip(borders []int, availableCoords []string, ctx context.Context) (string, []string, []int) {
 
 	var square string
 	for k := 0; k < len(borders); k += 2 {
@@ -54,7 +54,7 @@ func (boardState *BoardState) createNewShip(borders []int, availableCoords []str
 	}
 	boardState.MyBoard.SetStates(boardState.MyState)
 	for {
-		square = boardState.MyBoard.Listen(context.TODO())
+		square = boardState.MyBoard.Listen(ctx)
 		x, y := convertCords(square)
 		if boardState.MyState[x][y] != gui.Ship && boardState.MyState[x][y] != gui.Hit {
 			break
