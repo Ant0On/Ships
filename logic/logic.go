@@ -40,22 +40,23 @@ func NewApp(client *client.Client) *App {
 }
 
 func (app *App) Run() error {
-	generateErr := app.generateMenu()
-	if generateErr != nil {
-		return generateErr
+	err := app.generateMenu()
+	if err != nil {
+		return err
 	}
 	return nil
 }
 
 func (app *App) waitToStart() error {
-	stop := make(chan bool)
-	go app.everyThreeSecond(stop)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go app.everyThreeSecond(ctx)
 	for {
 		time.Sleep(time.Second * 1)
-		gameStatus, statusErr := app.client.Status()
-		if statusErr != nil {
-			log.Println(statusErr)
-			return statusErr
+		gameStatus, err := app.client.Status()
+		if err != nil {
+			log.Println(err)
+			return err
 		}
 		fmt.Println(gameStatus.GameStatus)
 
@@ -65,29 +66,27 @@ func (app *App) waitToStart() error {
 	}
 	return nil
 }
-func (app *App) everyThreeSecond(stop chan bool) {
+func (app *App) everyThreeSecond(ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
-			refreshErr := app.client.Refresh()
-			if refreshErr != nil {
+			err := app.client.Refresh()
+			if err != nil {
 				return
 			}
-		case <-stop:
+		case <-ctx.Done():
 			ticker.Stop()
 			return
 		}
 	}
 }
 func (app *App) gameCourse() error {
-	ch := make(chan bool)
 	exit := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
-	status, statusErr := app.client.Status()
-	if statusErr != nil {
-		log.Println(statusErr)
-		return statusErr
+	status, err := app.client.Status()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	fireRes := ""
@@ -101,6 +100,11 @@ func (app *App) gameCourse() error {
 
 	go func() {
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			timerStatus, _ := app.client.Status()
 			for i := 60; timerStatus.ShouldFire == true; i-- {
 				gameConf.timer.SetText(fmt.Sprintf("Time left: %d", i))
@@ -114,8 +118,15 @@ func (app *App) gameCourse() error {
 
 	go func() {
 		for {
-			status, _ = app.client.Status()
-			for status.ShouldFire == true {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			for status, err := app.client.Status(); status.ShouldFire == true; status, err = app.client.Status() {
+				if err != nil {
+					log.Fatal(err)
+				}
 				gameConf.enemyTour.SetText("")
 				boardState.enemyShoot(status)
 				gameConf.myTour.SetBgColor(gui.White)
@@ -129,16 +140,16 @@ func (app *App) gameCourse() error {
 						break
 					}
 				}
-				fire, fireErr := app.client.Fire(coords)
-				if fireErr != nil {
-					log.Println(fireErr)
+				time.Sleep(time.Second * 1)
+				fire, err := app.client.Fire(coords)
+				if err != nil {
+					log.Println(err)
 					return
 				}
 				gameConf.mark.SetBgColor(gui.White)
 				gameConf.mark.SetText(fmt.Sprintf("Coordinate: %s", coords))
 				boardState.markMyShoot(fire, coords)
 				fireRes = fire
-				status, _ = app.client.Status()
 			}
 			gameConf.myTour.SetText("")
 			gameConf.enemyTour.SetText("Opponent's turn")
@@ -147,6 +158,11 @@ func (app *App) gameCourse() error {
 
 	go func() {
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			time.Sleep(time.Millisecond * 100)
 
 			if fireRes != "miss" && fireRes != "" {
@@ -159,6 +175,16 @@ func (app *App) gameCourse() error {
 	}()
 	go func() {
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			time.Sleep(time.Millisecond * 100)
+			status, err := app.client.Status()
+			if err != nil {
+				log.Fatal(err)
+			}
 			if status.GameStatus == "ended" {
 				boardState.enemyShoot(status)
 				accuracy := countAccuracy(hits, totalShoots)
@@ -168,19 +194,13 @@ func (app *App) gameCourse() error {
 				boardState.Ui.Draw(accuracyTxt)
 				checkWinner(status)
 				time.Sleep(time.Second * 10)
-				ch <- checkWinner(status)
-				close(ch)
+				close(exit)
+				cancel()
 				break
 			}
 		}
 	}()
-	go func() {
-		for v := range ch {
-			log.Println(v)
-		}
-		close(exit)
-		cancel()
-	}()
+
 	boardState.Ui.Start(ctx, nil)
 	select {
 	case value := <-exit:
@@ -189,8 +209,10 @@ func (app *App) gameCourse() error {
 		<-exit
 	default:
 		close(exit)
-		app.client.Abandon()
-
+		err := app.client.Abandon()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -228,7 +250,7 @@ func initialConfig() ([]string, bool) {
 	pterm.Info.Println("Do you want to fight against bot? ")
 	decision, _ = pterm.DefaultInteractiveConfirm.Show()
 	pterm.Println()
-	if decision == true {
+	if decision {
 		return []string{nickName, description, ""}, decision
 	}
 	pterm.Info.Println("Enter your opponent's nickname: ")

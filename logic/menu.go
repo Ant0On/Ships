@@ -8,102 +8,132 @@ import (
 	"time"
 )
 
+const (
+	potentialEnemies = "Show potential enemies"
+	startGame        = "Start game"
+	top10            = "Show top 10 players"
+	playerStats      = "Show player stats"
+	quit             = "Quit"
+)
+
 func (app *App) generateMenu() error {
 	pterm.Println() //
-	s, _ := pterm.DefaultBigText.WithLetters(pterm.NewLettersFromString("Battleships")).Srender()
+	s, err := pterm.DefaultBigText.WithLetters(pterm.NewLettersFromString("Battleships")).Srender()
+	if err != nil {
+		return err
+	}
 	pterm.DefaultCenter.Println(s)
 	pterm.Println() //
 	for {
 		endGame := true
 		options := []string{
-			"Show potential enemies",
-			"Start game",
-			"Show top 10 players",
-			"Show player stats",
-			"Quit",
+			potentialEnemies,
+			startGame,
+			top10,
+			playerStats,
+			quit,
 		}
 		pterm.Println() //
-		selectedOption, _ := pterm.DefaultInteractiveSelect.WithOptions(options).Show()
+		selectedOption, err := pterm.DefaultInteractiveSelect.WithOptions(options).Show()
+		if err != nil {
+			return err
+		}
 		pterm.Info.Printfln("Selected option: %s", pterm.Green(selectedOption))
 		pterm.Println() //
 		switch selectedOption {
-		case options[0]:
+		case potentialEnemies:
 			time.Sleep(time.Second * 1)
 			pterm.Info.Println("Potential enemies: ")
-			playerListErr := app.client.PlayersList()
-			if playerListErr != nil {
-				return playerListErr
+			err := app.client.PlayersList()
+			if err != nil {
+				return err
 			}
-			pterm.Println() //
-		case options[1]:
+			pterm.Println()
+		case startGame:
 			var coords []string
 			info, bot := initialConfig()
 			pterm.Info.Print("Do you want to set your ships?: ")
-			result, _ := pterm.DefaultInteractiveConfirm.Show()
+			result, err := pterm.DefaultInteractiveConfirm.Show()
+			if err != nil {
+				return err
+			}
 			pterm.Println() // Blank line
 			pterm.Info.Printfln("You answered: %s", boolToText(result))
 			if result == true {
 				coords = makeShips()
+				if len(coords) != 20 {
+					coords = []string{}
+				}
 			}
-			initErr := app.client.InitGame(client.InitialData{Coords: coords, Desc: info[1],
+			time.Sleep(time.Second * 1)
+			err = app.client.InitGame(client.InitialData{Coords: coords, Desc: info[1],
 				Nick: info[0], TargetNick: info[2], Wpbot: bot})
-			if initErr != nil {
-				log.Println(initErr)
-				return initErr
+			if err != nil {
+				log.Println(err)
+				return err
 			}
-			startErr := app.waitToStart()
-			if startErr != nil {
-				log.Println(startErr)
-				return startErr
+			time.Sleep(time.Second * 1)
+			err = app.waitToStart()
+			if err != nil {
+				log.Println(err)
+				return err
 			}
-			description, descErr := app.client.Descriptions()
-			if descErr != nil {
-				log.Println(descErr)
-				return descErr
+			time.Sleep(time.Second * 1)
+			description, err := app.client.Descriptions()
+			if err != nil {
+				log.Println(err)
+				return err
 			}
-			myShips, shipsErr := app.client.Board()
-			if shipsErr != nil {
-				log.Println(shipsErr)
-				return shipsErr
+			time.Sleep(time.Second * 1)
+			myShips, err := app.client.Board()
+			if err != nil {
+				log.Println(err)
+				return err
 			}
 			time.Sleep(time.Millisecond * 300)
 			createBoard(description)
 			boardState.initialStates(myShips)
-			appError := app.gameCourse()
-			if appError != nil {
-				log.Println(appError)
-				return appError
+			err = app.gameCourse()
+			if err != nil {
+				log.Println(err)
+				return err
 			}
 			fmt.Print("Do you want to start another game? ")
-			endGame, _ = pterm.DefaultInteractiveConfirm.Show()
+			endGame, err = pterm.DefaultInteractiveConfirm.Show()
+			if err != nil {
+				return err
+			}
 			pterm.Println() // Blank line
 			pterm.Info.Printfln("You answered: %s", boolToText(endGame))
 			pterm.Println() //
-			if endGame == false {
+			if !endGame {
 				break
 			}
 			time.Sleep(time.Second * 3)
-		case options[2]:
+		case top10:
 			pterm.Info.Println("Top 10 players: ")
-			playerListErr := app.client.Top10()
-			if playerListErr != nil {
-				return playerListErr
+			err := app.client.Top10()
+			if err != nil {
+				return err
 			}
 			pterm.Println() //
-		case options[3]:
+		case playerStats:
 			pterm.Info.Println("Enter the player's nickname: ")
-			nickName, _ := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
-			pterm.Println() //
-			playerListErr := app.client.PlayerStats(nickName)
-			pterm.Println() //
-			if playerListErr != nil {
-				return playerListErr
+			nickName, err := pterm.DefaultInteractiveTextInput.WithMultiLine(false).Show()
+			if err != nil {
+				return err
 			}
 			pterm.Println() //
-		case options[4]:
+			err = app.client.PlayerStats(nickName)
+			pterm.Println() //
+			if err != nil {
+				return err
+			}
+			pterm.Println() //
+		case quit:
 			endGame = false
 		}
-		if endGame == false {
+		if !endGame {
 			break
 		}
 	}

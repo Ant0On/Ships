@@ -3,6 +3,7 @@ package logic
 import (
 	"Ships/client"
 	"context"
+	"fmt"
 	gui "github.com/grupawp/warships-gui/v2"
 	"golang.org/x/exp/slices"
 	"time"
@@ -46,14 +47,15 @@ func createBoard(description *client.Description) {
 }
 
 func (boardState *BoardState) markMyShoot(fireResult string, coords string) {
-	if fireResult == "hit" {
+	switch fireResult {
+	case "hit":
 		markShootConf(hitState, coords)
-	} else if fireResult == "sunk" {
+	case "sunk":
 		x, y := convertCords(coords)
 		neighbours := checkNeighbour(x, y)
 		markSunk(neighbours)
 		markShootConf(shipState, coords)
-	} else {
+	default:
 		markShootConf(missState, coords)
 	}
 
@@ -106,36 +108,36 @@ func makeShips() []string {
 
 	go func() {
 		for i := 0; i < len(coords); i++ {
-
 			switch {
 			case i == 0:
-				square = boardState.MyBoard.Listen(context.TODO())
+				square = boardState.MyBoard.Listen(ctx)
 			case slices.Contains(newShip, i):
 				informAboutShip(i, legendInfo)
-				square, availableCoords, forNowBorders = boardState.createNewShip(forNowBorders, availableCoords)
+				square, availableCoords, forNowBorders = boardState.createNewShip(forNowBorders, availableCoords, ctx)
 			default:
-				square = boardState.create(availableCoords)
+				square = boardState.create(availableCoords, ctx)
 			}
 
 			options, borders := possibilities(square, availableCoords, forNowBorders)
 			availableCoords = append(options)
 			forNowBorders = append(borders)
 			ch <- square
+			fCoords = append(fCoords, <-ch)
 			time.Sleep(time.Millisecond * 300)
 		}
 		close(ch)
-	}()
-	go func() {
-		for v := range ch {
-			fCoords = append(fCoords, v)
-		}
 		close(exit)
 		cancel()
 	}()
 
 	boardState.Ui.Start(ctx, nil)
-
-	<-exit
+	select {
+	case value := <-exit:
+		fmt.Println(value)
+		<-exit
+	default:
+		close(exit)
+	}
 
 	return fCoords
 
