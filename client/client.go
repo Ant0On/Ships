@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/pterm/pterm"
 	"golang.org/x/exp/slog"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
-	"regexp"
 	"time"
 )
 
@@ -47,8 +47,9 @@ func (client *Client) InitGame(initialProps InitialData) error {
 		return err
 	}
 
-	resp, err := client.HTTPClient.Do(req)
-	client.handleBadReq(resp, err, req)
+	clientCopy := client.createClient()
+
+	resp, err := clientCopy.Do(req)
 
 	slog.Info("client [InitGame]", slog.Any("initialData", initialData))
 
@@ -110,10 +111,7 @@ func (client *Client) Status() (*Status, error) {
 }
 
 func (client *Client) Fire(cord string) (string, error) {
-	//isValid := isValidCoordinate(cord)
-	//if !isValid {
-	//	return "", errors.New("wrong type of coordinates. ex. (A1)")
-	//}
+
 	fireData := Fire{Coord: cord}
 	fireResp := FireResponse{}
 	body, err := json.Marshal(fireData)
@@ -161,14 +159,15 @@ func (client *Client) Abandon() error {
 	if err != nil {
 		return err
 	}
-	res, err := client.HTTPClient.Do(req)
-	client.handleBadReq(res, err, req)
+
+	clientCopy := client.createClient()
+	res, err := clientCopy.Do(req)
+
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 
-	// print the response body
 	return nil
 }
 
@@ -234,11 +233,6 @@ func (client *Client) PlayerStats(player string) error {
 	return nil
 }
 
-func isValidCoordinate(coordinate string) bool {
-	pattern := `^[A-J](10|[1-9])$`
-	re := regexp.MustCompile(pattern)
-	return re.MatchString(coordinate)
-}
 func (client *Client) get(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	req.Header.Set("X-Auth-Token", client.Token)
@@ -246,12 +240,13 @@ func (client *Client) get(url string) ([]byte, error) {
 		return nil, err
 	}
 
-	res, err := client.HTTPClient.Do(req)
+	clientCopy := client.createClient()
+
+	res, err := clientCopy.Do(req)
 
 	if err != nil {
 		return nil, err
 	}
-	client.handleBadReq(res, err, req)
 	defer res.Body.Close()
 
 	bodyData, err := io.ReadAll(res.Body)
@@ -267,8 +262,10 @@ func (client *Client) post(url string, reader *bytes.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := client.HTTPClient.Do(req)
-	client.handleBadReq(res, err, req)
+
+	clientCopy := client.createClient()
+
+	res, err := clientCopy.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -279,9 +276,12 @@ func (client *Client) post(url string, reader *bytes.Reader) ([]byte, error) {
 	}
 	return data, nil
 }
-func (client *Client) handleBadReq(resp *http.Response, err error, req *http.Request) {
-	for resp.StatusCode == 503 {
-		time.Sleep(time.Second * 1)
-		resp, err = client.HTTPClient.Do(req)
-	}
+func (client *Client) createClient() *http.Client {
+	client2 := retryablehttp.NewClient()
+	client2.HTTPClient = client.HTTPClient
+	client2.RetryMax = 10
+	client2.RetryWaitMin = time.Second
+	client2.Logger = nil
+	client3 := client2.StandardClient()
+	return client3
 }

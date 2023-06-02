@@ -111,7 +111,6 @@ func (app *App) gameCourse() error {
 				time.Sleep(time.Millisecond * 900)
 				timerStatus, _ = app.client.Status()
 			}
-			gameConf.timer.SetText("")
 			boardState.enemyShoot(status)
 		}
 	}()
